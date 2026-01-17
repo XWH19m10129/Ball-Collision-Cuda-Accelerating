@@ -1,0 +1,36 @@
+# 输出文件
+output/
+output/*.csv
+
+# Linux可执行文件
+bin/ball_collision
+
+# 编译产物
+*.o
+*.out
+*.a
+*.so
+*.dylib
+
+# Visual Studio Windows产物保留原有结构
+# src/x64/
+
+# IDE和编辑器
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# CUDA编译缓存
+*.fatbin
+*.cubin
+*.ptx
+
+# 临时文件
+*.log
+*.tmp

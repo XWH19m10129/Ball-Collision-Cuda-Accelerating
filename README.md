@@ -1,6 +1,16 @@
 # Ball-Collision-Cuda-Accelerating 基于GPU的碰撞检测
 
-## 程序运行环境及编程环境
+## Platform Support
+
+### Windows
+原始 Windows 版本使用 OpenGL/GLUT 进行实时图形渲染。请参考下面的 Windows 运行说明。
+
+### Linux (Headless Server)
+**新增**: 支持在无图形界面的 Linux 服务器上运行！物理模拟结果将保存为 CSV 文件供后续分析和可视化。
+
+详细的 Linux 运行指南请参阅：[README_Linux.md](README_Linux.md)
+
+## 程序运行环境及编程环境 (Windows)
 
 操作系统: Windows10
 
