@@ -4,24 +4,34 @@
 #include <iostream>
 #include <stdlib.h>
 #include <cmath>
+#include <sys/stat.h>
+#include <sys/types.h>
 #include "sphere.cuh"
-#include <GL/glut.h>
-#include<gl/gl.h>
-#include<gl/GLU.h>
 
 #define PI 3.1415926536
 #define GRIDSPHERES 27
-const int SPACESIZE = 10; // ¿Õ¼ä´óĞ¡
+const int SPACESIZE = 10; // ï¿½Õ¼ï¿½ï¿½Ğ¡
 Sphere* spheres;
 Sphere* d_spheres;
-const int SPHERE_NUMBER = 64*4; // Ğ¡Çò×ÜÊı
-const float TIMEPERFRAME = 0.1; // ³¡¾°¿ìÂı
-const float gravity = -0.07 * TIMEPERFRAME; // ÖØÁ¦´óĞ¡
+const int SPHERE_NUMBER = 64*4; // Ğ¡ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+const float TIMEPERFRAME = 0.1; // ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+const float gravity = -0.07 * TIMEPERFRAME; // ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ğ¡
 #define collisionEpsilon 0.08
 int* gridContainSphereIndex;
 int* gridContainSphereNumber;
 int* d_gridContainSphereIndex;
 int* d_gridContainSphereNumber;
+
+// CUDAé”™è¯¯æ£€æŸ¥å®
+#define CUDA_CHECK(call) \
+    do { \
+        cudaError_t error = call; \
+        if (error != cudaSuccess) { \
+            fprintf(stderr, "CUDA Error: %s:%d, ", __FILE__, __LINE__); \
+            fprintf(stderr, "code: %d, reason: %s\n", error, cudaGetErrorString(error)); \
+            exit(1); \
+        } \
+    } while(0)
 
 __host__ __device__ float myMax(float a, float b)
 {
@@ -40,12 +50,12 @@ __host__ __device__ int getIndexGCSI(int a, int b, int c, int d)
     return d + c * GRIDSPHERES + b * GRIDSPHERES * SPACESIZE + a * GRIDSPHERES * SPACESIZE * SPACESIZE;
 }
 
-// ¿Õ¼ä»®·Ö
+// ï¿½Õ¼ä»®ï¿½ï¿½
 __global__ void sphereGridIndex(Sphere* d_spheres, int* d_gridContainSphereIndex, int* d_gridContainSphereNumber, int SPHERE_NUMBER)
 {
-    // »ñÈ¡È«¾ÖË÷Òı
+    // ï¿½ï¿½È¡È«ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
     int index = threadIdx.x + blockIdx.x * blockDim.x;
-    // ²½³¤
+    // ï¿½ï¿½ï¿½ï¿½
     int stride = blockDim.x * gridDim.x;
     for (int i = index; i < SPHERE_NUMBER; i += stride)
     {
@@ -54,12 +64,12 @@ __global__ void sphereGridIndex(Sphere* d_spheres, int* d_gridContainSphereIndex
         d_gridContainSphereIndex[getIndexGCSI(abs((int)location.x()), abs((int)location.y()), abs((int)location.z()), geshu)] = i;
     }
 }
-// Åö×²¼ì²â
+// ï¿½ï¿½×²ï¿½ï¿½ï¿½
 __global__ void sphereGridCollision(Sphere* d_spheres, int* d_gridContainSphereIndex, int* d_gridContainSphereNumber, int SPHERE_NUMBER, float gravity)
 {
-    // »ñÈ¡È«¾ÖË÷Òı
+    // ï¿½ï¿½È¡È«ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
     int index = threadIdx.x + blockIdx.x * blockDim.x;
-    // ²½³¤
+    // ï¿½ï¿½ï¿½ï¿½
     int stride = blockDim.x * gridDim.x;
     for (int i = index; i < SPHERE_NUMBER; i += stride)
     {
@@ -70,7 +80,7 @@ __global__ void sphereGridCollision(Sphere* d_spheres, int* d_gridContainSphereI
         Vec3f& speed = (d_spheres[i].speed);
         float restitution = d_spheres[i].restitution;
         float mass = theSphere.mass;
-        // ÓëÇ½Åö×²
+        // ï¿½ï¿½Ç½ï¿½ï¿½×²
         if (location[0] - radius <= 0)
         {
             d_spheres[i].speed.Set(abs(restitution * speed[0]), speed[1], speed[2]);
@@ -102,7 +112,7 @@ __global__ void sphereGridCollision(Sphere* d_spheres, int* d_gridContainSphereI
             speed = d_spheres[i].speed;
         }
 
-        //ÓëÆäËûÇòÅö×²
+        //ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½×²
         for (int m = myMax(location.x()-1, 0); m <= myMin(location.x() + 1, SPACESIZE-1); m++)
         {
             for (int n = myMax(location.y() - 1, 0); n <= myMin(location.y() + 1, SPACESIZE - 1); n++)
@@ -121,14 +131,14 @@ __global__ void sphereGridCollision(Sphere* d_spheres, int* d_gridContainSphereI
                         //printf("pos0.0");
                         if (centerDistance.Length() > theSphere.radius + aimSphere.radius + collisionEpsilon) { continue; }
                         //printf("begin collision!");
-                        // Òı·¢Åö×²
+                        // ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½×²
 
 
                         Vec3f aimSpeed(aimSphere.speed);
                         float aimMass = aimSphere.mass;
                         float collisionRestitution = (restitution + aimSphere.restitution) / 2;
                         
-                        // ÇòĞÄ·½Ïò·ÖËÙ¶È
+                        // ï¿½ï¿½ï¿½Ä·ï¿½ï¿½ï¿½ï¿½ï¿½Ù¶ï¿½
                         float fenSpeed = speed.Dot3(centerDistance) / centerDistance.Length();
                         float aimFenSpeed = aimSpeed.Dot3(centerDistance) / centerDistance.Length();
 
@@ -151,12 +161,12 @@ __global__ void sphereGridCollision(Sphere* d_spheres, int* d_gridContainSphereI
         }
     }
 }
-// Ğ¡ÇòÒÆ¶¯
+// Ğ¡ï¿½ï¿½ï¿½Æ¶ï¿½
 __global__ void sphereMove(Sphere* d_spheres,int SPHERE_NUMBER, float TIMEPERFRAME)
 {
-    // »ñÈ¡È«¾ÖË÷Òı
+    // ï¿½ï¿½È¡È«ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
     int index = threadIdx.x + blockIdx.x * blockDim.x;
-    // ²½³¤
+    // ï¿½ï¿½ï¿½ï¿½
     int stride = blockDim.x * gridDim.x;
     for (int i = index; i < SPHERE_NUMBER; i += stride)
     {
@@ -168,9 +178,9 @@ void initScene()
     spheres = (Sphere*)malloc(SPHERE_NUMBER * sizeof(Sphere));
     gridContainSphereIndex = (int *)malloc(SPACESIZE * SPACESIZE * SPACESIZE * GRIDSPHERES * sizeof(int));
     gridContainSphereNumber = (int *)malloc(SPACESIZE * SPACESIZE * SPACESIZE * sizeof(int));
-    cudaMalloc((void**)&d_spheres, SPHERE_NUMBER * sizeof(Sphere));
-    cudaMalloc((void**)&d_gridContainSphereIndex, SPACESIZE*SPACESIZE*SPACESIZE * GRIDSPHERES * sizeof(int));
-    cudaMalloc((void**)&d_gridContainSphereNumber, SPACESIZE * SPACESIZE * SPACESIZE * sizeof(int));
+    CUDA_CHECK(cudaMalloc((void**)&d_spheres, SPHERE_NUMBER * sizeof(Sphere)));
+    CUDA_CHECK(cudaMalloc((void**)&d_gridContainSphereIndex, SPACESIZE*SPACESIZE*SPACESIZE * GRIDSPHERES * sizeof(int)));
+    CUDA_CHECK(cudaMalloc((void**)&d_gridContainSphereNumber, SPACESIZE * SPACESIZE * SPACESIZE * sizeof(int)));
     for (int i = 0; i < SPHERE_NUMBER; i++)
     {
         spheres[i].center.Set(1.0 + i % 64 % 8, 4 + i/64, 1.0 + i % 64 / 8);
@@ -182,163 +192,117 @@ void initScene()
     }
 }
 
-
-void drawSphere(GLfloat xx, GLfloat yy, GLfloat zz, GLfloat radius, GLfloat M, GLfloat N)
-{
-    // ¸Ãº¯Êı²Î¿¼ÍøÉÏ²©¿Í£¬ÏêÇé¼ûÎÄµµ²Î¿¼ÎÄÏ×
-    float step_z = PI / M;
-    float step_xy = 2 * PI / N;
-    float x[4], y[4], z[4];
-
-    float angle_z = 0.0;
-    float angle_xy = 0.0;
-    int i = 0, j = 0;
-    glBegin(GL_QUADS);
-    for (i = 0; i < M; i++)
-    {
-        angle_z = i * step_z;
-
-        for (j = 0; j < N; j++)
-        {
-            angle_xy = j * step_xy;
-
-            x[0] = radius * sin(angle_z) * cos(angle_xy);
-            y[0] = radius * sin(angle_z) * sin(angle_xy);
-            z[0] = radius * cos(angle_z);
-
-            x[1] = radius * sin(angle_z + step_z) * cos(angle_xy);
-            y[1] = radius * sin(angle_z + step_z) * sin(angle_xy);
-            z[1] = radius * cos(angle_z + step_z);
-
-            x[2] = radius * sin(angle_z + step_z) * cos(angle_xy + step_xy);
-            y[2] = radius * sin(angle_z + step_z) * sin(angle_xy + step_xy);
-            z[2] = radius * cos(angle_z + step_z);
-
-            x[3] = radius * sin(angle_z) * cos(angle_xy + step_xy);
-            y[3] = radius * sin(angle_z) * sin(angle_xy + step_xy);
-            z[3] = radius * cos(angle_z);
-
-            for (int k = 0; k < 4; k++)
-            {
-                glVertex3f(xx + x[k], yy + y[k], zz + z[k]);
-            }
-        }
+// ä¿å­˜å¸§æ•°æ®åˆ°CSVæ–‡ä»¶
+void saveFrameData(int frameNumber) {
+    char filename[256];
+    sprintf(filename, "output/frame_%05d.csv", frameNumber);
+    FILE* fp = fopen(filename, "w");
+    
+    if (fp == NULL) {
+        fprintf(stderr, "Error: Cannot open file %s for writing\n", filename);
+        return;
     }
-    glEnd();
+    
+    fprintf(fp, "id,x,y,z,vx,vy,vz,radius,r,g,b\n");
+    for (int i = 0; i < SPHERE_NUMBER; i++) {
+        fprintf(fp, "%d,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f\n",
+            i,
+            spheres[i].center.x(), spheres[i].center.y(), spheres[i].center.z(),
+            spheres[i].speed.x(), spheres[i].speed.y(), spheres[i].speed.z(),
+            spheres[i].radius,
+            spheres[i].color[0], spheres[i].color[1], spheres[i].color[2]
+        );
+    }
+    fclose(fp);
 }
 
-void myDisplay()
-{
-    // Ã¿Ò»Ö¡µÄÅö×²¼ì²âºÍ»æÖÆ
-    //Çå³ş»º³åÇø
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    //±£´æµ±Ç°Ä£ĞÍÊÓÍ¼¾ØÕó¡£
-    glPushMatrix();
-
-    // ÈıÃæÇ½±Ú
-    glColor3f(114/256.0, 83/256.0, 52/256.0);
-    glBegin(GL_QUADS);
-        glVertex3f(0,0,0);
-        glVertex3f(SPACESIZE, 0, 0);
-        glVertex3f(SPACESIZE, 0, SPACESIZE);
-        glVertex3f(0, 0, SPACESIZE);
-    glEnd();
-    glColor3f(69 / 256.0, 137 / 256.0, 148 / 256.0);
-    glBegin(GL_QUADS);
-        glVertex3f(0, 0, 0);
-        glVertex3f(0, SPACESIZE, 0);
-        glVertex3f(SPACESIZE, SPACESIZE, 0);
-        glVertex3f(SPACESIZE, 0, 0);
-    glEnd();
-    glColor3f(117 / 256.0, 121 / 256.0, 74 / 256.0);
-    glBegin(GL_QUADS);
-        glVertex3f(SPACESIZE, 0, 0);
-        glVertex3f(SPACESIZE, 0, SPACESIZE);
-        glVertex3f(SPACESIZE, SPACESIZE, SPACESIZE);
-        glVertex3f(SPACESIZE, SPACESIZE, 0);
-    glEnd();
-    
-
-    //¿ªÊ¼ÔËĞĞÅö×²¼ì²âÏà¹Ø´úÂë
+// æ‰§è¡Œä¸€å¸§çš„ç‰©ç†æ¨¡æ‹Ÿ
+void simulateFrame() {
+    // æ¯ä¸€å¸§çš„ç¢°æ’æ£€æµ‹å’Œè®¡ç®—
+    // å¼€å§‹è¿›è¡Œç¢°æ’æ£€æµ‹å¹¶æ›´æ–°åœºæ™¯
     dim3 blockSize(SPHERE_NUMBER);
     dim3 gridSize(1);
     
     memset(gridContainSphereIndex, 0, SPACESIZE * SPACESIZE * SPACESIZE * GRIDSPHERES * sizeof(int));
     memset(gridContainSphereNumber, 0, SPACESIZE * SPACESIZE * SPACESIZE * sizeof(int));
 
-    cudaMemcpy((void*)d_gridContainSphereIndex, (void*)gridContainSphereIndex, SPACESIZE * SPACESIZE * SPACESIZE * GRIDSPHERES * sizeof(int), cudaMemcpyHostToDevice);
-    cudaMemcpy((void*)d_gridContainSphereNumber, (void*)gridContainSphereNumber, SPACESIZE * SPACESIZE * SPACESIZE * sizeof(int), cudaMemcpyHostToDevice);
-    cudaMemcpy((void*)d_spheres, (void*)spheres, SPHERE_NUMBER * sizeof(Sphere), cudaMemcpyHostToDevice);
-    cudaDeviceSynchronize();
+    CUDA_CHECK(cudaMemcpy((void*)d_gridContainSphereIndex, (void*)gridContainSphereIndex, SPACESIZE * SPACESIZE * SPACESIZE * GRIDSPHERES * sizeof(int), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy((void*)d_gridContainSphereNumber, (void*)gridContainSphereNumber, SPACESIZE * SPACESIZE * SPACESIZE * sizeof(int), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy((void*)d_spheres, (void*)spheres, SPHERE_NUMBER * sizeof(Sphere), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaDeviceSynchronize());
+    
     sphereGridIndex << < gridSize, blockSize >> > (d_spheres, d_gridContainSphereIndex, d_gridContainSphereNumber, SPHERE_NUMBER);
-
+    CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
     
-    cudaDeviceSynchronize();
     sphereGridCollision << < gridSize, blockSize >> > (d_spheres, d_gridContainSphereIndex, d_gridContainSphereNumber, SPHERE_NUMBER, gravity);
-
-    cudaDeviceSynchronize();
-    sphereMove << < gridSize, blockSize >> > (d_spheres, SPHERE_NUMBER, TIMEPERFRAME);
-    cudaDeviceSynchronize();
-   
-    cudaMemcpy((void*)spheres, (void*)d_spheres, SPHERE_NUMBER * sizeof(Sphere), cudaMemcpyDeviceToHost);
-    cudaDeviceSynchronize();
+    CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
     
-    //»æÖÆËùÓĞĞ¡Çò
-    for (int i = 0; i < SPHERE_NUMBER; i++)
-    {
-        glColor3f(spheres[i].color[0], spheres[i].color[1], spheres[i].color[2]);
-        drawSphere(spheres[i].center[0], spheres[i].center[1], spheres[i].center[2], spheres[i].radius, 10, 10);
-    }
-
-    // µ¯³ö¶ÑÕ»
-    glPopMatrix();
-
-    // ½»»»»º³åÇø
-    glutSwapBuffers();
+    sphereMove << < gridSize, blockSize >> > (d_spheres, SPHERE_NUMBER, TIMEPERFRAME);
+    CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
+   
+    CUDA_CHECK(cudaMemcpy((void*)spheres, (void*)d_spheres, SPHERE_NUMBER * sizeof(Sphere), cudaMemcpyDeviceToHost));
+    CUDA_CHECK(cudaDeviceSynchronize());
 }
-void changeSize(int w, int h) {
 
-    // ·ÀÖ¹³ıÊı¼´¸ß¶ÈÎª0
-    if (h == 0)
-        h = 1;
-
-    float ratio = 1.0 * w / h;
-
-    // µ¥Î»»¯Í¶Ó°¾ØÕó¡£
-    glMatrixMode(GL_PROJECTION);
-    glLoadIdentity();
-
-    // ÉèÖÃÊÓ¿Ú´óĞ¡ÎªÔö¸ö´°¿Ú´óĞ¡
-    glViewport(0, 0, w, h);
-
-    // ÉèÖÃÕıÈ·µÄÍ¶Ó°¾ØÕó
-    gluPerspective(45, ratio, 1, 1000);
-    //ÏÂÃæÊÇÉèÖÃÄ£ĞÍÊÓÍ¼¾ØÕó
-    glMatrixMode(GL_MODELVIEW);
-    glLoadIdentity();
-    gluLookAt(-8.0, 10.0, 18.0, 5.0, 3.5, 5.0, 0.0f, 1.0f, 0.0f);
+// æ¸…ç†èµ„æº
+void cleanup() {
+    free(spheres);
+    free(gridContainSphereIndex);
+    free(gridContainSphereNumber);
+    CUDA_CHECK(cudaFree(d_spheres));
+    CUDA_CHECK(cudaFree(d_gridContainSphereIndex));
+    CUDA_CHECK(cudaFree(d_gridContainSphereNumber));
 }
 
 int main(int argc, char* argv[])
 {
-    // ³ÌĞòÈë¿Ú£¬Íê³Éopengl³õÊ¼»¯£¬½¨Á¢´°¿Ú
+    // åˆå§‹åŒ–åœºæ™¯
     srand(1);
+    
+    // åˆ›å»ºè¾“å‡ºç›®å½•
+    #ifdef _WIN32
+    _mkdir("output");
+    #else
+    mkdir("output", 0755);
+    #endif
+    
+    printf("åˆå§‹åŒ–åœºæ™¯...\n");
     initScene();
-    glutInit(&argc, argv);
-    glutInitDisplayMode(GLUT_DEPTH | GLUT_DOUBLE | GLUT_RGBA);
-    glutInitWindowPosition(100, 10);
-    glutInitWindowSize(800, 800);
-    glutCreateWindow("spheerCollision");
-
-    glutDisplayFunc(&myDisplay);
-
-    glutIdleFunc(myDisplay);
-
-    glutReshapeFunc(changeSize);
-
-    glEnable(GL_DEPTH_TEST);
-    glutMainLoop();
-
+    
+    // ä»å‘½ä»¤è¡Œè¯»å–æ¨¡æ‹Ÿå¸§æ•°ï¼Œé»˜è®¤1000å¸§
+    int totalFrames = 1000;
+    if (argc > 1) {
+        totalFrames = atoi(argv[1]);
+        if (totalFrames <= 0) {
+            fprintf(stderr, "é”™è¯¯ï¼šå¸§æ•°å¿…é¡»ä¸ºæ­£æ•´æ•°\n");
+            cleanup();
+            return 1;
+        }
+    }
+    
+    printf("å¼€å§‹æ¨¡æ‹Ÿ %d å¸§...\n", totalFrames);
+    printf("çƒä½“æ•°é‡: %d\n", SPHERE_NUMBER);
+    printf("ç©ºé—´å¤§å°: %d x %d x %d\n", SPACESIZE, SPACESIZE, SPACESIZE);
+    
+    // ä¸»å¾ªç¯
+    for (int frame = 0; frame < totalFrames; frame++) {
+        simulateFrame();
+        
+        // æ¯éš”10å¸§ä¿å­˜ä¸€æ¬¡æ•°æ®
+        if (frame % 10 == 0) {
+            saveFrameData(frame);
+            printf("å·²å®Œæˆç¬¬ %d å¸§ (%.1f%%)\n", frame, (float)frame / totalFrames * 100);
+        }
+    }
+    
+    // ä¿å­˜æœ€åä¸€å¸§
+    saveFrameData(totalFrames - 1);
+    printf("æ¨¡æ‹Ÿå®Œæˆï¼\n");
+    printf("è¾“å‡ºæ–‡ä»¶ä¿å­˜åœ¨ output/ ç›®å½•\n");
+    
+    cleanup();
     return 0;
-
 }
